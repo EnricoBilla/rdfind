@@ -12,6 +12,7 @@ static_assert(__cplusplus >= 201703L,
 // std
 #include <iostream>
 #include <limits>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -78,6 +79,7 @@ usage()
     << " -makeresultsfile  (true)| false  makes a results file\n"
     << " -outputname  name  sets the results file name to \"name\" "
        "(default results.txt)\n"
+    << " -progress          true |(false) output progress information"
     << " -deleteduplicates  true |(false) delete duplicate files\n"
     << " -sleep             Xms          sleep for X milliseconds between "
        "file reads.\n"
@@ -115,6 +117,7 @@ struct Options
   bool usesha512 = false;    // use sha512 checksum to check for similarity
   bool usexxh128 = false;    // use xxh128 checksum to check for similarity
   bool deterministic = true; // be independent of filesystem order
+  bool showprogress = false; // show progress while reading file contents
   std::size_t buffersize = 1 << 20; // chunksize to use when reading files
   long nsecsleep = 0; // number of nanoseconds to sleep between each file read.
   std::string resultsfile = "results.txt"; // results file name.
@@ -237,6 +240,8 @@ parseOptions(Parser& parser)
                   << nextarg << "\" is not among them.\n";
         std::exit(EXIT_FAILURE);
       }
+    } else if (parser.try_parse_bool("-progress")) {
+      o.showprogress = parser.get_parsed_bool();
     } else if (parser.current_arg_is("-help") || parser.current_arg_is("-h") ||
                parser.current_arg_is("--help")) {
       usage();
@@ -409,12 +414,28 @@ main(int narg, const char* argv[])
                        "xxh128 checksum");
   }
 
+  std::function<void(std::size_t)> progress_callback;
+  if (o.showprogress) {
+    progress_callback = []() {
+      // format the total count only once, not each iteration.
+      std::ostringstream oss;
+      oss << "/" << filelist.size() << ")"
+          << "\033[u"; // Restore the cursor to the saved position;
+      return [suffix = oss.str()](std::size_t completed) {
+        std::cout
+          << "\033[s\033[K" // Save the cursor position & clear following text
+          << "(" << completed << suffix << std::flush;
+      };
+    }();
+  }
+
   for (auto it = modes.begin() + 1; it != modes.end(); ++it) {
     std::cout << dryruntext << "Now eliminating candidates based on "
               << it->second << ": " << std::flush;
 
     // read bytes (destroys the sorting, for disk reading efficiency)
-    gswd.fillwithbytes(it[0].first, it[-1].first, o.nsecsleep, o.buffersize);
+    gswd.fillwithbytes(
+      it[0].first, it[-1].first, o.nsecsleep, o.buffersize, progress_callback);
 
     // remove non-duplicates
     std::cout << "removed " << gswd.removeUniqSizeAndBuffer()

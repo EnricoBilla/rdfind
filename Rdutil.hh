@@ -9,6 +9,7 @@
 #ifndef rdutil_hh
 #define rdutil_hh
 
+#include <functional>
 #include <vector>
 
 #include "Fileinfo.hh" //file container
@@ -90,7 +91,8 @@ public:
   int fillwithbytes(enum Fileinfo::readtobuffermode type,
                     enum Fileinfo::readtobuffermode lasttype,
                     long nsecsleep,
-                    std::size_t buffersize);
+                    std::size_t buffersize,
+                    std::function<void(std::size_t)> progress_cb);
 
   /// make symlinks of duplicates.
   std::size_t makesymlinks(bool dryrun) const;
